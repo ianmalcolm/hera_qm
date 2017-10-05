@@ -232,7 +232,7 @@ plt.savefig(filename)
 f = plt.figure(figsize=(20, 12))
 # Number of subplots in X and Y directions
 nants = len(ants)
-nx = int(np.ceil(np.log2(nants + 1)))
+nx = int(np.ceil(np.sqrt(nants / 2.)))
 ny = int(np.ceil(nants / float(nx)))
 pol_colors = {'xx': 'r', 'yy': 'b'}
 ants = np.sort(ants)
@@ -261,6 +261,7 @@ for ai, ant in enumerate(ants):
     if ai == 0:
         plt.legend(loc='best')
 f.suptitle(str(latest.datetime) + ' UTC')
+plt.subplots_adjust(wspace=0, hspace=0)
 filename = os.path.join(outpath, basename + '.auto_specs.png')
 plt.savefig(filename)
 
