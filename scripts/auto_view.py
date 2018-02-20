@@ -200,7 +200,7 @@ filename = os.path.join(outpath, basename + '.auto_v_pos.png')
 plt.savefig(filename)
 
 
-# Plot auto amplitudes vs positions
+# Plot auto stds vs positions
 if args.log:
     vmin = -30
     vmax = 15
