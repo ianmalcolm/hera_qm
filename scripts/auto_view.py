@@ -37,7 +37,10 @@ import matplotlib.pyplot as plt
 # Get auto data
 autos = {}
 amps = {}
+stds = {}
 times = {}
+chan0 = 100
+chanN = 900
 if args.log:
     autos_raw = {}
 if len(args.files) == 0:
@@ -49,10 +52,12 @@ if len(args.files) == 0:
         pol = key[-2:]
         autos[(ant, pol)] = np.fromstring(redis.hgetall(key).get('data'), dtype=np.float32)
         amps[(ant, pol)] = np.median(autos[(ant, pol)])
+        stds[(ant, pol)] = np.std(autos[(ant, pol)][chan0:chanN])
         if args.log:
             autos_raw[(ant, pol)] = autos[(ant, pol)]
             autos[(ant, pol)] = 10.0 * np.log10(autos[(ant, pol)])
             amps[(ant, pol)] = 10.0 * np.log10(amps[(ant, pol)])
+            stds[(ant, pol)] = 10.0 * np.log10(stds[(ant, pol)])
         times[(ant, pol)] = float(redis.hgetall(key).get('time', 0))
 else:
     counts = {}
@@ -73,10 +78,12 @@ else:
         autos[key] /= counts[key]
         times[key] /= counts[key]
         amps[key] = np.median(autos[key])
+        stds[key] = np.std(autos[key][chan0:chanN])
         if args.log:
             autos_raw[key] = autos[key]
             autos[key] = 10.0 * np.log10(autos[key])
             amps[key] = 10.0 * np.log10(amps[key])
+            stds[key] = 10.0 * np.log10(stds[key])
     del(uvd)
     del(counts)
 
@@ -88,6 +95,7 @@ for key, t in times.items():
         # more than a minute from latest, use NaN to flag
         autos[key] = np.nan
         amps[key] = np.nan
+        stds[key] = np.nan
 latest = time.Time(latest, format='jd')
 
 # Get cminfo
@@ -143,7 +151,7 @@ if args.outbase == '':
 else:
     basename = args.outbase
 
-# Plot autos vs positions
+# Plot auto amplitudes vs positions
 pol_labels = {'xx': 'E', 'yy': 'N'}
 poli = {'xx': 0, 'yy': 1}
 if args.log:
@@ -189,6 +197,53 @@ ymin = plt.gca().get_ylim()[0]
 plt.plot([xmin, xmin + xr / 6., xmin + xr / 6.], [ymin * 3. / 4., ymin * 3. / 4., ymin], 'k')
 # Save file
 filename = os.path.join(outpath, basename + '.auto_v_pos.png')
+plt.savefig(filename)
+
+
+# Plot auto amplitudes vs positions
+if args.log:
+    vmin = -30
+    vmax = 15
+else:
+    vmin = 0
+    vmax = 12
+f = plt.figure(figsize=(10, 8))
+for ant in ants_connected:
+    for pol in ['xx', 'yy']:
+        try:
+            if not np.isnan(stds[(ant, pol)]):
+                ax = plt.scatter(antpos[ant, 0], antpos[ant, 1] + 3 * (poli[pol] - 0.5),
+                                 c=stds[(ant, pol)], vmin=vmin, vmax=vmax, cmap=goodbad)
+            else:
+                plt.scatter(antpos[ant, 0], antpos[ant, 1] + 3 * (poli[pol] - 0.5),
+                            marker='x', color='k')
+        except KeyError:
+            plt.scatter(antpos[ant, 0], antpos[ant, 1] + 3 * (poli[pol] - 0.5),
+                        marker='x', color='k')
+    text = (str(ant) + '\n' + pams[ant] + '\n' + receiverators[ant])
+    plt.annotate(text, xy=antpos[ant, 0:2] + [1, 0], textcoords='data',
+                 verticalalignment='center')
+if args.log:
+    label = '10log10(Std Autos)'
+else:
+    label = 'Std Autos'
+plt.colorbar(ax, label=label)
+xr = antpos[ants_connected, 0].max() - antpos[ants_connected, 0].min()
+yr = antpos[ants_connected, 1].max() - antpos[ants_connected, 1].min()
+plt.xlim([antpos[ants_connected, 0].min() - 0.05 * xr, antpos[ants_connected, 0].max() + 0.2 * xr])
+plt.ylim([antpos[ants_connected, 1].min() - 0.05 * yr, antpos[ants_connected, 1].max() + 0.1 * yr])
+plt.title(str(latest.datetime) + ' UTC')
+# Add polarization key
+for pol in ['xx', 'yy']:
+    x = antpos[ants_connected, 0].min()
+    y = antpos[ants_connected, 1].min() + 3 * (poli[pol])
+    plt.scatter(x, y, c=vmax, vmin=vmin, vmax=vmax, cmap=goodbad)
+    plt.annotate(pol_labels[pol] + ' pol', xy=[x + 1, y], textcoords='data', verticalalignment='center')
+xmin = plt.gca().get_xlim()[0]
+ymin = plt.gca().get_ylim()[0]
+plt.plot([xmin, xmin + xr / 6., xmin + xr / 6.], [ymin * 3. / 4., ymin * 3. / 4., ymin], 'k')
+# Save file
+filename = os.path.join(outpath, basename + '.auto_std_v_pos.png')
 plt.savefig(filename)
 
 
