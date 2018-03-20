@@ -7,6 +7,8 @@ import pyuvdata.tests as uvtest
 from hera_qm import utils
 import os
 import sys
+import json
+import copy
 
 
 class fake_data():
@@ -62,6 +64,31 @@ class TestLowLevelFunctions(unittest.TestCase):
                (2, 'x'): -0.261, (2, 'y'): 6.033, (3, 'x'): 0.261, (3, 'y'): 0.516}
         for key, val in ref.items():
             self.assertAlmostEqual(val, zs[key], places=3)
+
+    def test_red_corr_metrics_NaNs(self):
+        ''' Test that antennas not in reds return NaNs for redundant metrics '''
+        ants = copy.copy(self.ants)
+        ants.append(99)
+        red_corr = ant_metrics.red_corr_metrics(self.data, self.pols, self.antpols,
+                                                ants, self.reds, rawMetric=True)
+        ref = {(0, 'x'): 0.468, (0, 'y'): 0.479, (1, 'x'): 0.614, (1, 'y'): 0.472,
+               (2, 'x'): 0.536, (2, 'y'): 0.623, (3, 'x'): 0.567, (3, 'y'): 0.502,
+               (99, 'x'): np.NaN, (99, 'y'): np.NaN}
+        for key, val in ref.items():
+            if np.isnan(val):
+                self.assertTrue(np.isnan(red_corr[key]))
+            else:
+                self.assertAlmostEqual(val, red_corr[key], places=3)
+        zs = ant_metrics.red_corr_metrics(self.data, self.pols, self.antpols,
+                                          ants, self.reds)
+        ref = {(0, 'x'): -1.445, (0, 'y'): -0.516, (1, 'x'): 1.088, (1, 'y'): -0.833,
+               (2, 'x'): -0.261, (2, 'y'): 6.033, (3, 'x'): 0.261, (3, 'y'): 0.516,
+               (99, 'x'): np.NaN, (99, 'y'): np.NaN}
+        for key, val in ref.items():
+            if np.isnan(val):
+                self.assertTrue(np.isnan(zs[key]))
+            else:
+                self.assertAlmostEqual(val, zs[key], places=3)
 
     def test_mean_Vij_cross_pol_metrics(self):
         mean_Vij_cross_pol = ant_metrics.mean_Vij_cross_pol_metrics(self.data, self.pols,
@@ -133,6 +160,33 @@ class TestLowLevelFunctions(unittest.TestCase):
         for key in self.data.data.keys():
             for pol in self.data.data[key].keys():
                 self.assertIn((key[0], key[1], pol), power.keys())
+
+    def test_load_antenna_metrics(self):
+        # load a metrics file and check some values
+        metrics_file = os.path.join(DATA_PATH, 'example_ant_metrics.json')
+        metrics = ant_metrics.load_antenna_metrics(metrics_file)
+        self.assertAlmostEqual(metrics['final_mod_z_scores']['meanVijXPol'][(72, 'x')], 0.17529333517595402)
+        self.assertAlmostEqual(metrics['final_mod_z_scores']['meanVijXPol'][(72, 'y')], 0.17529333517595402)
+        self.assertAlmostEqual(metrics['final_mod_z_scores']['meanVijXPol'][(31, 'y')], 0.7012786080508268)
+
+        # change some values to FPE values, and write it out
+        metrics['final_mod_z_scores']['meanVijXPol'][(72, 'x')] = np.nan
+        metrics['final_mod_z_scores']['meanVijXPol'][(72, 'y')] = np.inf
+        metrics['final_mod_z_scores']['meanVijXPol'][(31, 'y')] = -np.inf
+        for key in metrics.keys():
+            metrics[key] = str(metrics[key])
+        outpath = os.path.join(DATA_PATH, 'test_output', 'ant_metrics_output.json')
+        with open(outpath, 'w') as outfile:
+            json.dump(metrics, outfile, indent=4)
+
+        # test reading it back in, and that the values agree
+        metrics_new = ant_metrics.load_antenna_metrics(outpath)
+        self.assertTrue(np.isnan(metrics_new['final_mod_z_scores']['meanVijXPol'][(72, 'x')]))
+        self.assertEqual(metrics_new['final_mod_z_scores']['meanVijXPol'][(72, 'y')], np.inf)
+        self.assertEqual(metrics_new['final_mod_z_scores']['meanVijXPol'][(31, 'y')], -np.inf)
+
+        # clean up after ourselves
+        os.remove(outpath)
 
 
 class TestAntennaMetrics(unittest.TestCase):
@@ -272,7 +326,8 @@ class TestAntmetricsRun(object):
         arg4 = "--extension=.ant_metrics.json"
         arg5 = "--metrics_path={}".format(os.path.join(DATA_PATH, 'test_output'))
         arg6 = "--vis_format=miriad"
-        arguments = ' '.join([arg0, arg1, arg2, arg3, arg4, arg5, arg6])
+        arg7 = "--alwaysDeadCut=10"
+        arguments = ' '.join([arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7])
 
         # test running with no files
         cmd = ' '.join([arguments, ''])
@@ -315,7 +370,8 @@ class TestAntmetricsRun(object):
         arg3 = "--extension=.ant_metrics.json"
         arg4 = "--metrics_path={}".format(os.path.join(DATA_PATH, 'test_output'))
         arg5 = "--vis_format=miriad"
-        arguments = ' '.join([arg0, arg1, arg2, arg3, arg4, arg5])
+        arg6 = "--alwaysDeadCut=10"
+        arguments = ' '.join([arg0, arg1, arg2, arg3, arg4, arg5, arg6])
 
         # test running with no calfile
         xx_file = os.path.join(DATA_PATH, 'zen.2458002.47754.xx.HH.uvA')

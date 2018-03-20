@@ -31,6 +31,9 @@ def get_metrics_ArgumentParser(method_name):
                        help='Modified z-score cut for most cross-polarized antenna. Default 5 "sigmas"')
         a.add_argument('--deadCut', default=5.0, type=float,
                        help='Modified z-score cut for most likely dead antenna. Default 5 "sigmas"')
+        a.add_argument('--alwaysDeadCut', default=10.0, type=float,
+                       help='Modified z-score cut for antennas that are definitely dead. Default 10 "sigmas".'
+                            'These are all thrown away at once without waiting to iteratively throw away only the worst offender.')
         a.add_argument('--extension', default='.ant_metrics.json', type=str,
                        help='Extension to be appended to the file name. Default is ".ant_metrics.json"')
         a.add_argument('--metrics_path', default='', type=str,
@@ -146,6 +149,12 @@ def get_metrics_ArgumentParser(method_name):
         a.add_argument('--waterfalls', default=None, type=str, help='comma separated '
                        'list of npz files containing waterfalls of flags to broadcast '
                        'to full flag array and union with flag array in flag_file.')
+        a.add_argument('--output_npz', default=True, type=bool,
+                       help='Whether to save an npz with the final flag array and waterfall. '
+                       'The flag array will be identical to what is stored in the data, '
+                       'and the waterfall is the union of all input waterfalls.')
+        a.add_argument('--out_npz_ext', default='.flags.npz', type=str,
+                       help='Extension to be appended to input file name. Default is ".flags.npz".')
         a.add_argument('filename', metavar='filename', nargs='*', type=str, default=[],
                        help='file for which to flag RFI (only one file allowed).')
     return a

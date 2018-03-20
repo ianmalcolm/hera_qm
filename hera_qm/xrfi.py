@@ -188,7 +188,7 @@ def watershed_flag(d, f=None, sig_init=6, sig_adj=2):
         prevx, prevy = x.size, y.size
         for dx, dy in [(1, 0), (-1, 0), (0, 1), (0, -1)]:
             xp, yp = (x + dx).clip(0, f1.shape[0] - 1), (y + dy).clip(0, f1.shape[1] - 1)
-            i = np.where(f1[xp, yp] > sig_adj)[0]  # if sigma > 'sigl'
+            i = np.where(d[xp, yp] > sig_adj)[0]  # if sigma > 'sigl'
             f1.mask[xp[i], yp[i]] = 1
             x, y = np.where(f1.mask)
     return f1.mask
@@ -249,37 +249,46 @@ def xrfi(d, f=None, Kt=8, Kf=8, sig_init=6, sig_adj=2):
     return f
 
 
-def xrfi_run(filename, args, history):
+def xrfi_run(indata, args, history):
     """
     Run an RFI-flagging algorithm on a single data file, and optionally calibration files,
     and store results in npz files.
 
     Args:
-       filename -- Data file to run RFI flagging on.
+       indata -- Either UVData object or data file to run RFI flagging on.
        args -- parsed arguments via argparse.ArgumentParser.parse_args
        history -- history string to include in files
     Return:
        None
 
-    This function will take in a data file and optionally a cal file and
+    This function will take in a UVData object or  data file and optionally a cal file and
     model visibility file, and run an RFI-flagging algorithm to identify contaminated
     observations. Each set of flagging will be stored, as well as compressed versions.
     """
-    # make sure we were given files to process
-    if len(filename) == 0:
-        raise AssertionError('Please provide a visibility file')
-    if len(filename) > 1:
-        raise AssertionError('xrfi_run currently only takes a single data file.')
-    filename = filename[0]
-    uvd = UVData()
-    if args.infile_format == 'miriad':
-        uvd.read_miriad(filename)
-    elif args.infile_format == 'uvfits':
-        uvd.read_uvfits(filename)
-    elif args.infile_format == 'fhd':
-        uvd.read_fhd(filename)
+    if isinstance(indata, UVData):
+        uvd = indata
+        if len(args.filename) == 0:
+            raise AssertionError('Please provide a filename to go with UVData object. '
+                                 'The filename is used in conjunction with "extension" '
+                                 'to determine the output filename.')
+        else:
+            filename = args.filename[0]
     else:
-        raise ValueError('Unrecognized input file format ' + str(args.infile_format))
+        # make sure we were given files to process
+        if len(indata) == 0:
+            raise AssertionError('Please provide a visibility file or UVData object')
+        if len(indata) > 1:
+            raise AssertionError('xrfi_run currently only takes a single data file.')
+        filename = indata[0]
+        uvd = UVData()
+        if args.infile_format == 'miriad':
+            uvd.read_miriad(filename)
+        elif args.infile_format == 'uvfits':
+            uvd.read_uvfits(filename)
+        elif args.infile_format == 'fhd':
+            uvd.read_fhd(filename)
+        else:
+            raise ValueError('Unrecognized input file format ' + str(args.infile_format))
 
     # Compute list of excluded antennas
     if args.ex_ants != '' or args.metrics_json != '':
@@ -485,7 +494,7 @@ def flags2waterfall(uv, flag_array=None):
     else:
         waterfall = np.zeros((uv.Ntimes, uv.Nfreqs))
         for i, t in enumerate(np.unique(uv.time_array)):
-            waterfall[i, :] = np.mean(uv.flag_array[uv.time_array == t, 0, :, :],
+            waterfall[i, :] = np.mean(flag_array[uv.time_array == t, 0, :, :],
                                       axis=(0, 2))
 
     return waterfall
@@ -671,6 +680,8 @@ def xrfi_apply(filename, args, history):
     if len(waterfalls) > 0:
         wf_full = sum(waterfalls).astype(bool)  # Union all waterfalls
         flag_array += waterfall2flags(wf_full, uvd)  # Combine with flag array
+    else:
+        wf_full = None
 
     # Finally, add the flag array to the flag array in the data
     uvd.flag_array += flag_array
@@ -695,3 +706,8 @@ def xrfi_apply(filename, args, history):
         uvd.write_uvfits(outpath, force_phase=True, spoof_nonessential=True)
     else:
         raise ValueError('Unrecognized output file format ' + str(args.outfile_format))
+    if args.output_npz:
+        # Save an npz with the final flag array and waterfall
+        outpath = outpath + args.out_npz_ext
+        np.savez(outpath, flag_array=uvd.flag_array, waterfall=wf_full,
+                 history=flag_history + history)
